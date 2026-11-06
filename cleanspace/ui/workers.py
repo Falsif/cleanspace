@@ -10,7 +10,7 @@ from ..core.scanner import ScanControl
 
 
 class _Worker(QObject):
-    progress = Signal(str, int, int)
+    progress = Signal(str, object, object)  # object: размеры > 2 ГБ не влезают в int Qt
     done = Signal(object)
     failed = Signal(str)
 
@@ -33,7 +33,7 @@ class _Worker(QObject):
 
 class Task(QObject):
     """Одна фоновая операция. Держите ссылку на объект, пока операция идёт."""
-    progress = Signal(str, int, int)
+    progress = Signal(str, object, object)  # object: размеры > 2 ГБ не влезают в int Qt
     finished = Signal(object)
     failed = Signal(str)
 

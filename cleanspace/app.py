@@ -19,6 +19,50 @@ def _single_instance(app) -> bool:
     return True
 
 
+def _install_error_handler(app, app_name: str) -> None:
+    """Ошибки не закрывают программу. Они записываются в errors.log, а сообщение
+    показывается только из главного потока (окно из фонового потока было бы пустым)."""
+    import threading
+    import time
+
+    from PySide6.QtCore import QObject, Qt, Signal
+    from PySide6.QtWidgets import QMessageBox
+
+    from .core.utils import app_data_dir
+
+    log_path = app_data_dir() / "errors.log"
+
+    class Relay(QObject):
+        show = Signal(str)
+
+    relay = Relay()
+    state = {"last": 0.0}
+
+    def show_box(text: str) -> None:
+        if time.monotonic() - state["last"] < 5:  # не засыпать пользователя окнами
+            return
+        state["last"] = time.monotonic()
+        QMessageBox.warning(None, app_name,
+                            "Произошла ошибка, но программа продолжает работу.\n\n"
+                            f"{text}\n\nПодробности записаны в файл:\n{log_path}")
+
+    relay.show.connect(show_box, Qt.QueuedConnection)
+    app._error_relay = relay  # держим ссылку
+
+    def handle(exc_type, exc, tb) -> None:
+        text = "".join(traceback.format_exception(exc_type, exc, tb))
+        print(text, file=sys.stderr)
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(time.strftime("\n=== %d.%m.%Y %H:%M:%S ===\n") + text)
+        except OSError:
+            pass
+        relay.show.emit(f"{exc_type.__name__}: {exc}")  # доставится в главный поток
+
+    sys.excepthook = handle
+    threading.excepthook = lambda a: handle(a.exc_type, a.exc_value, a.exc_traceback)
+
+
 def main() -> int:
     os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
     from PySide6.QtCore import Qt
@@ -49,15 +93,7 @@ def main() -> int:
         QMessageBox.information(None, APP_NAME, "CleanSpace уже запущен (проверьте область уведомлений).")
         return 0
 
-    def excepthook(exc_type, exc, tb):  # программа не должна закрываться из-за ошибки
-        text = "".join(traceback.format_exception(exc_type, exc, tb))
-        print(text, file=sys.stderr)
-        try:
-            QMessageBox.warning(None, APP_NAME, f"Произошла ошибка, но программа продолжает работу:\n\n"
-                                                f"{exc_type.__name__}: {exc}")
-        except Exception:
-            pass
-    sys.excepthook = excepthook
+    _install_error_handler(app, APP_NAME)
 
     try:
         storage = Storage()

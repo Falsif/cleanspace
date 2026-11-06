@@ -217,8 +217,10 @@ class ProgressPanel(Card):
 
     def update_steps(self, current: str, done: int, total: int) -> None:
         if total > 0:
-            self.bar.setRange(0, total)
-            self.bar.setValue(min(done, total))
+            # QProgressBar принимает только 32-битные числа — масштабируем
+            scale = max(1, total // 1_000_000_000 + 1)
+            self.bar.setRange(0, total // scale)
+            self.bar.setValue(min(done, total) // scale)
             self.counter.setText(f"{done} из {total}")
         self._set_path(current)
 
